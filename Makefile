@@ -1,12 +1,12 @@
 GCC := gcc
 FLAGS := -Wall
 target=proxy_server
-
+SRCS = src/main.c src/config.c
 
 all:$(target)
 
-$(target):src/main.c
-	$(GCC) $(FLAGS) $< -o $@
+$(target):$(SRCS)
+	$(GCC) $(FLAGS) $^ -o $@
 
 
 .PHONY:clean

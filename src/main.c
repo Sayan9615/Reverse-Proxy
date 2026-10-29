@@ -5,12 +5,19 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
-
+#include "../include/server.h"
 
 #define PORT 8080
 
 int main()
 {
+
+    LoadBalancer lb;
+    load_config(&lb,"config/config.txt");
+     
+    //TODO :check_backends_health(&lb)
+
+
     int server_fd,client_fd;
 
     struct sockaddr_in address;

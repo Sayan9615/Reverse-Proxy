@@ -21,4 +21,8 @@ typedef struct
 }LoadBalancer;
 
 
+void load_config(LoadBalancer *lb,const char *filepath);
+void check_backends_health(LoadBalancer *lb);
+
+
 #endif
