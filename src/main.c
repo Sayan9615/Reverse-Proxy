@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 
 #define PORT 8080
@@ -17,7 +18,8 @@ int main()
 
     int len_addr=sizeof(address);
 
-    char *msg="HTTP/1.1 200 OK/\n\n Reverse Proxy!\n";
+
+    signal(SIGCHLD,SIG_IGN);
 
     server_fd=socket(AF_INET,SOCK_STREAM,0); 
 
@@ -35,10 +37,38 @@ int main()
     {
     client_fd=accept(server_fd,(struct sockaddr*)&address,(socklen_t*)&len_addr);
 
-    printf("Client conectat ! File descriptor client : %d\n",client_fd);
-    write(client_fd,msg,strlen(msg));
+    int pid=fork();
 
-    close(client_fd);
+   
+    switch (pid)
+    {
+    case -1:
+        
+        perror("Eroare la fork");
+        close(client_fd);
+        continue;
+    
+    case 0:
+        close(server_fd);
+        printf("Proces copil (PID: %d), serveste clientul (FD::%d)\n",getpid(),client_fd);
+        
+        char buffer[1024]={0};
+        read(client_fd,buffer,sizeof(buffer)-1);
+
+        printf("----------Cerere Primita ---\n%s\n---------------\n",buffer);
+
+        char *msg="HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works!\n";
+        write(client_fd,msg,strlen(msg));
+
+        close(client_fd);
+        _exit(0);
+
+    default:
+        close(client_fd);
+        break;
+    }
+
+    
     }
 
     
