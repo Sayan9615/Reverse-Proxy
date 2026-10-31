@@ -1,7 +1,7 @@
 GCC := gcc
 FLAGS := -Wall
 target=proxy_server
-SRCS = src/main.c src/config.c
+SRCS = src/main.c src/config.c src/health.c
 
 all:$(target)
 
