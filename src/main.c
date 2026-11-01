@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
 #include "../include/server.h"
 
 #define PORT 8080
@@ -40,7 +41,9 @@ int main()
     struct sockaddr_in address;
     memset(&address,0,sizeof(address));
 
-    int len_addr=sizeof(address);
+	//comentata pentru ca nu mai este folosita
+	//iar compilatorul da warning
+    //int len_addr=sizeof(address);
 
 
     struct sigaction sa;
@@ -99,6 +102,8 @@ int main()
         printf("\n[INFO SIGHUP] Reload config.txt... \n");
         load_config(&lb,"config/config.txt");
 
+		check_backends_health(&lb); //load_config pune is_alive = 0, deci reverificam
+
         for(int i = 0 ;i<lb.count;i++)
         {
             printf("[Backend Updated] %d IP %s | Port %d\n",i+1,lb.servers[i].ip,lb.servers[i].port);
@@ -108,7 +113,11 @@ int main()
         reload_request=0;
     }
 
-    client_fd=accept(server_fd,(struct sockaddr*)&address,(socklen_t*)&len_addr);
+    //client_fd=accept(server_fd,(struct sockaddr*)&address,(socklen_t*)&len_addr);
+
+	struct sockaddr_in client_addr;
+	socklen_t client_len = sizeof(client_addr);
+	client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
 
     if(client_fd<0)
     {
@@ -118,6 +127,20 @@ int main()
         }
         perror("Eroare la accept!");
         continue;
+    }
+
+	//alegem backend ul in PARINTE, casa pastreze curent_idx intre cereri
+	char client_ip[INET_ADDRSTRLEN]="?";
+    inet_ntop(AF_INET,&client_addr.sin_addr,client_ip,sizeof(client_ip));
+    int backend_idx=select_backend(&lb,client_ip);
+
+    if(backend_idx>=0)
+    {
+        printf("[BALANCER] Client %s -> backend %s:%d\n",client_ip,lb.servers[backend_idx].ip,lb.servers[backend_idx].port);
+    }
+    else
+    {
+        printf("[BALANCER] Client %s -> niciun backend disponibil!\n",client_ip);
     }
 
     int pid=fork();
@@ -141,8 +164,17 @@ int main()
 
         printf("\n\n----------Cerere Primita ---\n%s\n---------------\n",buffer);
 
-        char *msg="HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works!\n";
-        write(client_fd,msg,strlen(msg));
+        //char *msg="HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works!\n";
+                char msg[256];
+        if(backend_idx>=0)
+        {
+            snprintf(msg,sizeof(msg),"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works! Backend ales: %s:%d\n",lb.servers[backend_idx].ip,lb.servers[backend_idx].port);
+        }
+        else
+        {
+            snprintf(msg,sizeof(msg),"HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nNiciun backend disponibil\n");
+        }
+		write(client_fd,msg,strlen(msg));
 
 
         char stat_signal='1';
