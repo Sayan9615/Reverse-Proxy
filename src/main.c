@@ -11,9 +11,11 @@
 #include "../include/server.h"
 
 #define PORT 8080
+#define HEALTH_CHECK_INTERVAL 10
 
 int reload_request=0;
 int keep_running=1;
+int health_check_request=0;
 
 void handle_sighup(int sig)
 {
@@ -26,6 +28,12 @@ void handle_sigint(int sig)
     (void)sig;
     keep_running=0;
 
+}
+
+void handle_sigalrm(int sig)
+{
+    (void)sig;
+    health_check_request=1;
 }
 
 int main()
@@ -56,7 +64,12 @@ int main()
     sa.sa_handler=handle_sighup;
     sigaction(SIGHUP,&sa,NULL);
 
+    sa.sa_handler=handle_sigalrm;
+    sigaction(SIGALRM,&sa,NULL);
+
     signal(SIGCHLD,SIG_IGN);
+
+    alarm(HEALTH_CHECK_INTERVAL);
 
     int stats_pipe[2];
     if(pipe(stats_pipe)<0)
@@ -89,11 +102,35 @@ int main()
 
     while(keep_running)
     {
-        char dummy;
-        while(read(stats_pipe[0],&dummy,1)>0)
+        StatsMessage stat_msg;
+        while(read(stats_pipe[0], &stat_msg, sizeof(stat_msg)) == sizeof(stat_msg))
         {
             total_request++;
-            printf("[PIPE STATS] Total cereri servite pana acum %d\n",total_request);
+
+            /* Daca backend-ul ales initial nu a putut raspunde, il marcam OFFLINE direct in parinte */
+            if(stat_msg.preferred_idx >= 0 && stat_msg.preferred_idx < lb.count &&
+               stat_msg.used_idx != stat_msg.preferred_idx)
+            {
+                lb.servers[stat_msg.preferred_idx].is_alive = 0;
+                printf("[PIPE IPC] Backend-ul %s:%d a picat! Marcat OFFLINE in procesul parinte.\n",
+                       lb.servers[stat_msg.preferred_idx].ip,
+                       lb.servers[stat_msg.preferred_idx].port);
+            }
+
+            if(stat_msg.used_idx >= 0 && stat_msg.used_idx < lb.count)
+            {
+                lb.servers[stat_msg.used_idx].requests_served++;
+                printf("[PIPE STATS] Total cereri: %d | Servit de %s:%d (cereri pe acest backend: %d)\n",
+                       total_request,
+                       lb.servers[stat_msg.used_idx].ip,
+                       lb.servers[stat_msg.used_idx].port,
+                       lb.servers[stat_msg.used_idx].requests_served);
+            }
+            else
+            {
+                printf("[PIPE STATS] Total cereri: %d | Cerere respinsa (503 - niciun backend viu)\n",
+                       total_request);
+            }
         }
 
 
@@ -113,6 +150,14 @@ int main()
         reload_request=0;
     }
 
+    if(health_check_request)
+    {
+        printf("\n[INFO SIGALRM] Health Check periodic...\n");
+        check_backends_health(&lb);
+        health_check_request=0;
+        alarm(HEALTH_CHECK_INTERVAL);
+    }
+
     //client_fd=accept(server_fd,(struct sockaddr*)&address,(socklen_t*)&len_addr);
 
 	struct sockaddr_in client_addr;
@@ -123,7 +168,7 @@ int main()
     {
         if(errno==EINTR)
         {
-            continue; // a fost apasat ctrl+c ,keep_running ->0 si o sa se iasa din while  
+            continue; // accept() a fost intrerupt de un semnal (SIGINT, SIGHUP sau SIGALRM)
         }
         perror("Eroare la accept!");
         continue;
@@ -155,30 +200,40 @@ int main()
         continue;
     
     case 0:
+        alarm(0); // copilul nu are nevoie de alarma de health check
         close(stats_pipe[0]);
         close(server_fd);
         printf("\n\nProces copil (PID: %d), serveste clientul (FD::%d)\n",getpid(),client_fd);
         
-        char buffer[1024]={0};
-        read(client_fd,buffer,sizeof(buffer)-1);
+        char buffer[4096]={0};
+        int bytes_read = read(client_fd,buffer,sizeof(buffer)-1);
 
-        printf("\n\n----------Cerere Primita ---\n%s\n---------------\n",buffer);
-
-        //char *msg="HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works!\n";
-                char msg[256];
-        if(backend_idx>=0)
+        if(bytes_read > 0)
         {
-            snprintf(msg,sizeof(msg),"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nReverse Proxy works! Backend ales: %s:%d\n",lb.servers[backend_idx].ip,lb.servers[backend_idx].port);
-        }
-        else
-        {
-            snprintf(msg,sizeof(msg),"HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nNiciun backend disponibil\n");
-        }
-		write(client_fd,msg,strlen(msg));
+            printf("\n\n----------Cerere Primita ---\n%s\n---------------\n",buffer);
 
+            int used_backend = -1;
+            if(backend_idx>=0)
+            {
+                used_backend = forward_to_backend(&lb, backend_idx, client_fd, buffer, bytes_read);
+            }
 
-        char stat_signal='1';
-        write(stats_pipe[1],&stat_signal,1);
+            if(used_backend < 0)
+            {
+                char *msg = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\nNiciun backend disponibil\n";
+                write(client_fd, msg, strlen(msg));
+            }
+
+            /* Scriem in proxy.log cu apeluri de sistem I/O */
+            log_request(client_ip, &lb, backend_idx, used_backend);
+
+            /* Trimitem rezultatul catre parinte prin pipe */
+            StatsMessage child_stat;
+            child_stat.preferred_idx = backend_idx;
+            child_stat.used_idx = used_backend;
+            write(stats_pipe[1], &child_stat, sizeof(child_stat));
+        }
+
         close(stats_pipe[1]);
 
 

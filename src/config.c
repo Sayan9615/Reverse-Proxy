@@ -62,6 +62,7 @@ void load_config(LoadBalancer *lb,const char *filepath)
 
             lb->servers[lb->count].port=atoi(space_ptr+1);
             lb->servers[lb->count].is_alive=0;
+            lb->servers[lb->count].requests_served=0;
 
             lb->count++;
 
