@@ -1,15 +1,21 @@
 GCC := gcc
 FLAGS := -Wall
-target=proxy_server
+
+TARGET = proxy_server
+BACKEND_TARGET = backend_dummy
+
 SRCS = src/main.c src/config.c src/health.c src/balancer.c src/proxy.c src/logger.c
+BACKEND_SRCS = src/backend_dummy.c
 
-all:$(target)
+all: $(TARGET) $(BACKEND_TARGET)
 
-$(target):$(SRCS)
+$(TARGET): $(SRCS)
 	$(GCC) $(FLAGS) $^ -o $@
 
+$(BACKEND_TARGET): $(BACKEND_SRCS)
+	$(GCC) $(FLAGS) $^ -o $@
 
-.PHONY:clean
+.PHONY: clean
 
 clean:
-	rm -f proxy_server
+	rm -f $(TARGET) $(BACKEND_TARGET) proxy.log

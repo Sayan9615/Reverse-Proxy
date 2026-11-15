@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "../include/server.h"
@@ -33,6 +34,12 @@ int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const
             perror("Eroare la crearea socket-ului catre backend");
             continue;
         }
+
+        /* Timeout de 3 secunde la primirea raspunsului (pentru backend-uri lente sau testare cu nc) */
+        struct timeval tv;
+        tv.tv_sec = 3;
+        tv.tv_usec = 0;
+        setsockopt(backend_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         struct sockaddr_in backend_addr;
         memset(&backend_addr, 0, sizeof(backend_addr));

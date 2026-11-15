@@ -54,3 +54,24 @@ void log_request(const char *client_ip, LoadBalancer *lb, int preferred_idx, int
 
     close(fd);
 }
+
+/* Afiseaza in consola un raport complet cu starea fiecarui backend */
+void print_stats(const LoadBalancer *lb, int total_requests)
+{
+    printf("\n================ [STATISTICI PROXY] ================\n");
+    printf("Total cereri procesate pana acum: %d\n", total_requests);
+    printf("Algoritm activ: %s\n", (lb->algo == ALGO_IP_HASH) ? "IP Hash" : "Round-Robin");
+    printf("----------------------------------------------------\n");
+    printf("%-3s | %-16s | %-5s | %-8s | %-14s\n", "#", "IP", "Port", "Status", "Cereri Servite");
+    printf("----+------------------+-------+----------+--------------\n");
+    for (int i = 0; i < lb->count; i++)
+    {
+        printf("%-3d | %-16s | %-5d | %-8s | %-14d\n",
+               i + 1,
+               lb->servers[i].ip,
+               lb->servers[i].port,
+               lb->servers[i].is_alive ? "ONLINE" : "OFFLINE",
+               lb->servers[i].requests_served);
+    }
+    printf("====================================================\n\n");
+}

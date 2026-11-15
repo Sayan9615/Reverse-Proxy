@@ -16,6 +16,7 @@
 int reload_request=0;
 int keep_running=1;
 int health_check_request=0;
+int stats_request=0;
 
 void handle_sighup(int sig)
 {
@@ -34,6 +35,12 @@ void handle_sigalrm(int sig)
 {
     (void)sig;
     health_check_request=1;
+}
+
+void handle_sigusr1(int sig)
+{
+    (void)sig;
+    stats_request=1;
 }
 
 int main()
@@ -66,6 +73,9 @@ int main()
 
     sa.sa_handler=handle_sigalrm;
     sigaction(SIGALRM,&sa,NULL);
+
+    sa.sa_handler=handle_sigusr1;
+    sigaction(SIGUSR1,&sa,NULL);
 
     signal(SIGCHLD,SIG_IGN);
 
@@ -156,6 +166,12 @@ int main()
         check_backends_health(&lb);
         health_check_request=0;
         alarm(HEALTH_CHECK_INTERVAL);
+    }
+
+    if(stats_request)
+    {
+        print_stats(&lb, total_request);
+        stats_request=0;
     }
 
     //client_fd=accept(server_fd,(struct sockaddr*)&address,(socklen_t*)&len_addr);
@@ -249,8 +265,9 @@ int main()
     }
 
 
-    printf("\n\n[SHUTDOWN] SigInt primit!");
-    printf("\n\n[SHUTDOWN] Se elibereaza resursele...");
+    printf("\n\n[SHUTDOWN] SigInt primit!\n");
+    print_stats(&lb, total_request);
+    printf("[SHUTDOWN] Se elibereaza resursele...");
 
     close(stats_pipe[0]);
     close(stats_pipe[1]);

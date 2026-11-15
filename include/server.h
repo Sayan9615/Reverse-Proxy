@@ -41,5 +41,6 @@ void check_backends_health(LoadBalancer *lb);
 int select_backend(LoadBalancer *lb, const char *client_ip); //-1 daca nu exista backend viu
 int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const char *request, int req_len);
 void log_request(const char *client_ip, LoadBalancer *lb, int preferred_idx, int used_idx);
+void print_stats(const LoadBalancer *lb, int total_requests);
 
 #endif
