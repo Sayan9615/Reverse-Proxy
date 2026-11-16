@@ -35,11 +35,12 @@ int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const
             continue;
         }
 
-        /* Timeout de 3 secunde la primirea raspunsului (pentru backend-uri lente sau testare cu nc) */
+        /* Timeout de 3 secunde la conectare si la primirea raspunsului */
         struct timeval tv;
         tv.tv_sec = 3;
         tv.tv_usec = 0;
         setsockopt(backend_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(backend_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
         struct sockaddr_in backend_addr;
         memset(&backend_addr, 0, sizeof(backend_addr));
@@ -51,6 +52,7 @@ int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const
         {
             printf("[FAILOVER] Backend-ul %s:%d nu raspunde! Se cauta altul...\n",
                    lb->servers[idx].ip, lb->servers[idx].port);
+            lb->servers[idx].is_alive = 0; /* Marcam direct in memoria partajata */
             close(backend_fd);
             continue;
         }
@@ -61,10 +63,14 @@ int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const
                    lb->servers[idx].ip, lb->servers[idx].port);
         }
 
+        /* Incrementam numarul de conexiuni active in memoria partajata (mmap) */
+        __sync_fetch_and_add(&lb->servers[idx].active_connections, 1);
+
         /* 1. Trimitem cererea primita de la client catre backend */
         if (write(backend_fd, request, req_len) < 0)
         {
             perror("Eroare la trimiterea cererii catre backend");
+            __sync_fetch_and_sub(&lb->servers[idx].active_connections, 1);
             close(backend_fd);
             continue;
         }
@@ -76,6 +82,9 @@ int forward_to_backend(LoadBalancer *lb, int preferred_idx, int client_fd, const
         {
             write(client_fd, response_buf, bytes);
         }
+
+        /* Conexiunea s-a incheiat, scadem contorul din memoria partajata */
+        __sync_fetch_and_sub(&lb->servers[idx].active_connections, 1);
 
         close(backend_fd);
         return idx;
