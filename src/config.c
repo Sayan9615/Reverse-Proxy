@@ -38,23 +38,26 @@ void load_config(LoadBalancer *lb,const char *filepath)
 		}
 
 		if(strncmp(line, "ALGORITHM ", 10) == 0){
-			char *value = line+10;
-			value[strcspn(value, " \r\n")]='\0';
+            char *value = line+10;
+            value[strcspn(value, " \r\n")]='\0';
 
-			if(strcmp(value, "ip_hash") == 0){
-				lb->algo = ALGO_IP_HASH;
-			}
-			else if(strcmp(value, "round_robin") == 0){
-				lb->algo = ALGO_ROUND_ROBIN;
-			}
-			else{
-				fprintf(stderr, "Algirm necunoscut in config: %s (folosesc round_robin implicit...)\n", value);
-			}
-			continue;
-		}
+            if(strcmp(value, "ip_hash") == 0){
+                lb->algo = ALGO_IP_HASH;
+            }
+            else if(strcmp(value, "round_robin") == 0){
+                lb->algo = ALGO_ROUND_ROBIN;
+            }
+            else if(strcmp(value, "least_conn") == 0){
+                lb->algo = ALGO_LEAST_CONN;
+            }
+            else{
+                fprintf(stderr, "Algoritm necunoscut in config: %s (folosesc round_robin implicit...)\n", value);
+            }
+            continue;
+        }
         char *space_ptr=strchr(line,' ');
 
-        if(space_ptr !=NULL)
+        if(space_ptr != NULL)
         {
             *space_ptr='\0';
             strncpy(lb->servers[lb->count].ip,line,63);
@@ -63,11 +66,11 @@ void load_config(LoadBalancer *lb,const char *filepath)
             lb->servers[lb->count].port=atoi(space_ptr+1);
             lb->servers[lb->count].is_alive=0;
             lb->servers[lb->count].requests_served=0;
+            lb->servers[lb->count].active_connections=0;
 
             lb->count++;
-
         }
-
+//aici
     }
 
 

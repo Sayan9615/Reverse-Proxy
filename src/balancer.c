@@ -1,6 +1,36 @@
 #include <stdio.h>
 #include "../include/server.h"
 
+/* Least Connections: alege backend-ul viu cu cele mai putine conexiuni active.
+   In caz de egalitate, porneste cautarea de la curent_idx ca sa distribuie uniform. */
+static int select_least_conn(LoadBalancer *lb)
+{
+    int best_idx = -1;
+    int min_conn = -1;
+
+    for (int i = 0; i < lb->count; i++)
+    {
+        int idx = (lb->curent_idx + i) % lb->count;
+
+        if (lb->servers[idx].is_alive)
+        {
+            int conn = lb->servers[idx].active_connections;
+            if (best_idx == -1 || conn < min_conn)
+            {
+                min_conn = conn;
+                best_idx = idx;
+            }
+        }
+    }
+
+    if (best_idx != -1)
+    {
+        lb->curent_idx = (best_idx + 1) % lb->count;
+    }
+
+    return best_idx;
+}
+
 /* Hash djb2 pe un string (aici: IP-ul clientului) */
 static unsigned long hash_djb2(const char *str)
 {
@@ -72,6 +102,7 @@ static int select_ip_hash(LoadBalancer *lb, const char *client_ip)
 /* Intoarce indexul backend-ului ales, sau -1 daca niciun backend nu e viu.
    Trebuie apelata in procesul PARINTE (inainte de fork), ca modificarea lui
    curent_idx sa se pastreze intre cereri. */
+
 int select_backend(LoadBalancer *lb, const char *client_ip)
 {
     if (lb->count <= 0)
@@ -83,6 +114,9 @@ int select_backend(LoadBalancer *lb, const char *client_ip)
     {
     case ALGO_IP_HASH:
         return select_ip_hash(lb, client_ip);
+
+    case ALGO_LEAST_CONN:
+        return select_least_conn(lb);
 
     case ALGO_ROUND_ROBIN:
     default:
